@@ -9,4 +9,9 @@ export class AuthController {
   async register(@Body() body): Promise<string> {
     return this.authService.register(body);
   }
+
+  @Post('login')
+  async login(@Body() body): Promise<string> {
+    return this.authService.login(body);
+  }
 }

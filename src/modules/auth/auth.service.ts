@@ -1,4 +1,8 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  UnauthorizedException
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../users/user.entity';
 import { Repository } from 'typeorm';
@@ -29,6 +33,23 @@ export class AuthService {
 
     const newUser = await this.usersRepository.save(user);
     const { password, ...result } = newUser;
+    return result;
+  }
+
+  async login(user: any): Promise<any> {
+    const existUser = await this.usersRepository.findOne({
+      where: { username: user.username }
+    });
+
+    if (!existUser) {
+      throw new ConflictException('Email does not exist');
+    }
+
+    if (existUser.password !== user.password) {
+      throw new ConflictException('Password is incorrect');
+    }
+
+    const { password, ...result } = existUser;
     return result;
   }
 }
