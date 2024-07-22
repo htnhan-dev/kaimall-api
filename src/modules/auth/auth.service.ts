@@ -1,32 +1,45 @@
 import {
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../users/user.entity';
-import { Repository } from 'typeorm';
-import { registerDTO } from './auth.dto';
+import { Not, Repository } from 'typeorm';
+import { refreshTokenDTO, registerDTO } from './auth.dto';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
+import { TokenUtils } from 'src/shared/utils/generate-token.util';
 
 @Injectable()
 export class AuthService {
   constructor(
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
-    private readonly jwtService: JwtService
+    private readonly jwtService: JwtService,
+    private readonly tokenUtils: TokenUtils
   ) {}
 
-  async validateUser(username: string, password: string): Promise<any> {
-    const user = await this.usersRepository.findOne({ where: { username } });
+  // ------------------ VALIDATE USER ------------------
+  async validateUser(username: string, password: string): Promise<User> {
+    const user = await this.usersRepository.findOne({
+      where: { username },
+      select: ['id', 'username', 'password', 'refresh_token']
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
     if (user && (await bcrypt.compare(password, user.password))) {
       const { password, ...result } = user;
-      return result;
+      return result as User;
     }
     return null;
   }
 
+  // ------------------ REGISTER ------------------
   async register(body: registerDTO): Promise<User> {
     const existUser = await this.usersRepository.findOne({
       where: { username: body.username }
@@ -46,40 +59,58 @@ export class AuthService {
     await this.usersRepository.save(newUser);
 
     const { password, ...result } = newUser;
-    return newUser;
+    return result as User;
   }
 
+  // ------------------ LOGIN ----------------
   async login(body: registerDTO): Promise<any> {
     const { username, password } = body;
 
-    const existUser = await this.usersRepository.findOne({
-      where: { username },
-      select: ['id', 'username', 'password']
-    });
+    const validatedUser = await this.validateUser(username, password);
 
-    if (!existUser) {
-      throw new ConflictException('Username does not exist');
+    if (!validatedUser) {
+      throw new UnauthorizedException('Username or password is incorrect');
     }
 
-    const passwordMatch = await bcrypt.compare(password, existUser.password);
+    const tokens = this.tokenUtils.generateTokens(validatedUser);
 
-    if (!passwordMatch) {
-      throw new UnauthorizedException('Password is incorrect');
-    }
+    const { access_token, refresh_token } = tokens;
 
-    const payload = { username: existUser.username, sub: existUser.id };
-
-    const access_token = this.jwtService.sign(payload, {
-      secret: process.env.JWT_SECRET
+    await this.usersRepository.update(validatedUser.id, {
+      refresh_token
     });
 
-    const refresh_token = this.jwtService.sign(payload, {
-      secret: process.env.JWT_REFRESH_SECRET,
-      expiresIn: '7d'
-    });
-
-    const { password: _, ...result } = existUser;
-
-    return { user: result, access_token, refresh_token };
+    return { user: validatedUser, access_token, refresh_token };
   }
+
+  // ------------------ REFRESH TOKEN ------------------
+  async refreshToken(body: refreshTokenDTO): Promise<any> {
+    const { username, refresh_token } = body;
+
+    const user = await this.usersRepository.findOne({
+      where: { username, refresh_token }
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const tokens = this.tokenUtils.generateTokens(user);
+
+    const { access_token, refresh_token: new_refresh_token } = tokens;
+
+    await this.usersRepository.update(user.id, {
+      refresh_token: new_refresh_token
+    });
+
+    return { user, access_token, refresh_token: new_refresh_token };
+  }
+
+  // ------------------ LOGOUT ------------------
+  async logout(body: refreshTokenDTO): Promise<any> {
+    // TODO: Implement logout
+  }
+
+  // ------------------ FORGOT PASSWORD ------------------
+  async forgotPassword(body: any): Promise<any> {}
 }
