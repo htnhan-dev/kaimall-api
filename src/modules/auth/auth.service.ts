@@ -6,6 +6,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { User } from '../users/user.entity';
 import { Repository } from 'typeorm';
+import { registerDTO } from './auth.dto';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
@@ -22,34 +24,47 @@ export class AuthService {
     return null;
   }
 
-  async register(user: any): Promise<any> {
+  async register(body: registerDTO): Promise<User> {
     const existUser = await this.usersRepository.findOne({
-      where: { username: user.username }
+      where: { username: body.username }
     });
 
     if (existUser) {
       throw new ConflictException('Email already exists');
     }
 
-    const newUser = await this.usersRepository.save(user);
-    const { password, ...result } = newUser;
-    return result;
+    const hashedPassword = await bcrypt.hash(body.password, 10);
+
+    const newUser = await this.usersRepository.save({
+      ...body,
+      password: hashedPassword
+    });
+
+    delete newUser.password;
+
+    return newUser;
   }
 
-  async login(user: any): Promise<any> {
+  async login(body: registerDTO): Promise<any> {
+    const { username, password } = body;
+
     const existUser = await this.usersRepository.findOne({
-      where: { username: user.username }
+      where: { username },
+      select: ['id', 'username', 'password']
     });
 
     if (!existUser) {
       throw new ConflictException('Email does not exist');
     }
 
-    if (existUser.password !== user.password) {
-      throw new ConflictException('Password is incorrect');
+    const passwordMatch = await bcrypt.compare(password, existUser.password);
+
+    if (!passwordMatch) {
+      throw new UnauthorizedException('Password is incorrect');
     }
 
-    const { password, ...result } = existUser;
+    const { password: _, ...result } = existUser;
+
     return result;
   }
 }
