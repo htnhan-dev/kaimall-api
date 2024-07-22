@@ -11,5 +11,5 @@ export class User {
   @Column({
     select: false
   })
-  password: string;
+  password?: string;
 }
