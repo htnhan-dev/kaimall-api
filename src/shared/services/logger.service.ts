@@ -9,6 +9,7 @@ export class LoggerService {
 
   // ------------------ LOG ERROR ------------------
   logError(request: Request, description: any): void {
+    console.log('☄️ ~ ERROR:', description);
     const logMessage = `${new Date().toLocaleString()} - \n ${
       request.method
     } - ${request.originalUrl} \n ${

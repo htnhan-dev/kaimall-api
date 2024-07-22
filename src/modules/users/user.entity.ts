@@ -12,4 +12,14 @@ export class User {
     select: false
   })
   password?: string;
+
+  @Column({
+    nullable: true
+  })
+  otp: number;
+
+  @Column({
+    nullable: true
+  })
+  refresh_token?: string;
 }
